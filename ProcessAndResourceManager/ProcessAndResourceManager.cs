@@ -8,19 +8,21 @@ namespace ProcessAndResourceManager
 {
     class ProcessAndResourceManager
     {
-        private static ProcessAndResourceManager instance;
-        private List<ProcessControlBlock>[] ReadyList = new List<ProcessControlBlock>[3];
+        private static ProcessAndResourceManager _instance;
+        private List<ProcessControlBlock>[] ReadyList;
+        private ProcessControlBlock RunningProcess;
 
-        private ProcessAndResourceManager() {}
+        private ProcessAndResourceManager() { }
         public static ProcessAndResourceManager Instance
         {
             get
             {
-                if (instance == null)
+                if (_instance == null)
                 {
-                    instance = new ProcessAndResourceManager();
+                    _instance = new ProcessAndResourceManager();
+                    _instance.Initialize();
                 }
-                return instance;
+                return _instance;
             }
         }
 
@@ -29,7 +31,27 @@ namespace ProcessAndResourceManager
         /// Initializes the Process and Resource manager state back to the original
         /// state.
         /// </summary>
-        public void Initialize() { throw new NotImplementedException(); }
+        public void Initialize()
+        {
+            // Initialize the ready list
+            ReadyList = new List<ProcessControlBlock>[3]
+            {
+                new List<ProcessControlBlock>(), 
+                new List<ProcessControlBlock>(), 
+                new List<ProcessControlBlock>()
+            };
+
+            // Create new Process
+            var process = new ProcessControlBlock("init", Priorities.Init);
+
+            // Initialize process
+            process.StatusList = ReadyList;
+
+            // Add process to ready list
+            ReadyList[0].Add(process);
+
+            Scheduler();
+        }
 
         /// <summary>
         /// Terminates the execution of the system
@@ -42,17 +64,45 @@ namespace ProcessAndResourceManager
         /// </summary>
         /// <param name="name">The process name.</param>
         /// <param name="priority">The process priority.</param>
-        /// <returns></returns>
-        /// <exception cref="NotImplementedException"></exception>
-        public char Create(char name, int priority) { throw new NotImplementedException(); }
+        public void Create(char name, int priority)
+        {
+            // Error if priority is not 1 or 2
+            if (priority != 1 && priority != 2)
+            {
+                throw new Exception("Priority must be 1 or 2");
+            }
+
+            // Recursively search children tree of the init process to see if process id already exists
+            if (findProcessById(name.ToString(), ReadyList[0][0]) != null)
+            {
+                throw new Exception("process name already exists");
+            }
+
+
+            // Create new Process
+            var process = new ProcessControlBlock(name.ToString(), (Priorities)priority);
+
+            // Initialize process
+            process.StatusList = ReadyList;
+            process.Parent = RunningProcess;
+
+            // Update parent process
+            RunningProcess.Children.Add(process);
+
+            // Add process to ready list
+            ReadyList[priority].Add(process);
+
+            Scheduler();
+        }
 
         /// <summary>
         /// Destroys the process <name> and all of its descendants.
         /// </summary>
         /// <param name="name">The process name.</param>
-        /// <returns></returns>
-        /// <exception cref="NotImplementedException"></exception>
-        public char Destroy(char name) { throw new NotImplementedException(); }
+        public void Destroy(char name)
+        {
+            Scheduler();
+        }
 
 
         /// <summary>
@@ -61,9 +111,10 @@ namespace ProcessAndResourceManager
         /// </summary>
         /// <param name="resource">The resource.</param>
         /// <param name="units">The units.</param>
-        /// <returns></returns>
-        /// <exception cref="NotImplementedException"></exception>
-        public char Request(int resource, int units) { throw new NotImplementedException(); }
+        public void Request(int resource, int units)
+        {
+            Scheduler();
+        }
 
 
         /// <summary>
@@ -72,20 +123,67 @@ namespace ProcessAndResourceManager
         /// </summary>
         /// <param name="resource">The resource.</param>
         /// <param name="units">The units.</param>
-        /// <returns></returns>
-        /// <exception cref="NotImplementedException"></exception>
-        public char Release(int resource, int units) { throw new NotImplementedException(); }
+        public void Release(int resource, int units)
+        {
+            Scheduler();
+        }
 
 
         /// <summary>
         /// Timesouts the manager and shifts the current running process to the back of it's queue,
         /// and sets the current running process to the next in line.
         /// </summary>
+        public void Timeout()
+        {
+            Scheduler();
+        }
+
+
+        /// <summary>
+        /// Gets the running process.
+        /// </summary>
         /// <returns></returns>
-        /// <exception cref="NotImplementedException"></exception>
-        public char Timeout() { throw new NotImplementedException(); }
+        public string GetRunningProcess()
+        {
+            return RunningProcess.Pid;
+        }
+
+        /// <summary>
+        /// Recursive function that searches for the process by identifier.
+        /// </summary>
+        /// <param name="id">The identifier.</param>
+        /// <param name="process">The current process.</param>
+        /// <returns></returns>
+        private ProcessControlBlock findProcessById(string id, ProcessControlBlock process)
+        {
+            if ((process == null) || process.Pid == id) return process;
+
+            // recursively navigate through tree to find process, otherwise return null
+            foreach (var proc in process.Children)
+            {
+                var p = findProcessById(id, proc);
+                if (p != null) return p;
+            }
+
+            return null;
+        }
 
 
+        /// <summary>
+        /// Helper function that adjusts the ready list based upon recent changes
+        /// </summary>
+        private void Scheduler()
+        {
+            for (var i = 2; i >= 0; i--)
+            {
+                if (ReadyList[i].Count > 0)
+                {
+                    RunningProcess = ReadyList[i][0];
+                    return;
+                }
+            }
 
+            throw new Exception("No processes running: EXTREME FAILURE!");
+        }
     }
 }

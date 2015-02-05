@@ -20,81 +20,40 @@ namespace ProcessAndResourceManager
             {
                 var tokens = line.Split(' ');
 
-                switch (tokens[0].ToLower())
+                try
                 {
-                    case "init":
-                        try
-                        {
+                    switch (tokens[0].ToLower())
+                    {
+                        case "init":
                             manager.Initialize();
-                        }
-                        catch (Exception e)
-                        {
-                            sb.AppendLine(e.Message);
-                        }
-                        break;
-                    case "quit":
-                        try
-                        {
+                            break;
+                        case "quit":
                             manager.Quit();
-                        }
-                        catch (Exception e)
-                        {
-                            sb.AppendLine(e.Message);
-                        }
-                        break;
-                    case "cr":
-                        try
-                        {
+                            break;
+                        case "cr":
                             manager.Create(Char.Parse(tokens[1]), Int32.Parse(tokens[2]));
-                        }
-                        catch (Exception e)
-                        {
-                            sb.AppendLine(e.Message);
-                        }
-                        break;
-                    case "de":
-                        try
-                        {
+                            break;
+                        case "de":
                             manager.Destroy(Char.Parse(tokens[1]));
-                        }
-                        catch (Exception e)
-                        {
-                            sb.AppendLine(e.Message);
-                        }
-                        break;
-                    case "req":
-                        try
-                        {
+                            break;
+                        case "req":
                             manager.Request(Int32.Parse(tokens[1]), Int32.Parse(tokens[2]));
-                        }
-                        catch (Exception e)
-                        {
-                            sb.AppendLine(e.Message);
-                        }
-                        break;
-                    case "rel":
-                        try
-                        {
+                            break;
+                        case "rel":
                             manager.Release(Int32.Parse(tokens[1]), Int32.Parse(tokens[2]));
-                        }
-                        catch (Exception e)
-                        {
-                            sb.AppendLine(e.Message);
-                        }
-                        break;
-                    case "to":
-                        try
-                        {
+                            break;
+                        case "to":
                             manager.Timeout();
-                        }
-                        catch (Exception e)
-                        {
-                            sb.AppendLine(e.Message);
-                        }
-                        break;
-                    default:
-                        sb.AppendLine("error: invalid operation");
-                        break;
+                            break;
+                        default:
+                            throw new Exception("invalid operation");
+                    }
+
+                    sb.AppendLine(manager.GetRunningProcess());
+                }
+                catch (Exception e)
+                {
+                    sb.AppendLine("error: " + e.Message);
                 }
             }
 

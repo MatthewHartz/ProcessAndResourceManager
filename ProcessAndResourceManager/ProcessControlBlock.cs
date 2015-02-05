@@ -9,13 +9,12 @@ namespace ProcessAndResourceManager
     class ProcessControlBlock
     {
         public string Pid;
-        public List<ResourceControlBlock> Other_Resources;
+        public List<ResourceControlBlock> OtherResources;
         public ProcessStates StatusType;
-        public List<ProcessControlBlock>[] StatusList;
+        public object StatusList;
         public ProcessControlBlock Parent;
         public List<ProcessControlBlock> Children;
         public Priorities Priority;
-
 
         public ProcessControlBlock(string pid, Priorities priority)
         {
@@ -23,6 +22,7 @@ namespace ProcessAndResourceManager
             Priority = priority;
             StatusType = ProcessStates.Ready;
             Children = new List<ProcessControlBlock>();
+            OtherResources = new List<ResourceControlBlock>();
         }
     }
 }

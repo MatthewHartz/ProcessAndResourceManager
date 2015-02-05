@@ -10,6 +10,7 @@ namespace ProcessAndResourceManager
     {
         private static ProcessAndResourceManager _instance;
         private List<ProcessControlBlock>[] ReadyList;
+        private List<ResourceControlBlock> Resources; 
         private ProcessControlBlock RunningProcess;
 
         private ProcessAndResourceManager() { }
@@ -50,6 +51,15 @@ namespace ProcessAndResourceManager
             // Add process to ready list
             ReadyList[0].Add(process);
 
+            // Create resources
+            Resources = new List<ResourceControlBlock>()
+            {
+                new ResourceControlBlock("R1", 1),
+                new ResourceControlBlock("R2", 2),
+                new ResourceControlBlock("R3", 3),
+                new ResourceControlBlock("R4", 4),
+            };
+
             Scheduler();
         }
 
@@ -73,7 +83,7 @@ namespace ProcessAndResourceManager
             }
 
             // Recursively search children tree of the init process to see if process id already exists
-            if (findProcessById(name.ToString(), ReadyList[0][0]) != null)
+            if (FindProcessById(name.ToString(), ReadyList[0][0]) != null)
             {
                 throw new Exception("process name already exists");
             }
@@ -101,6 +111,16 @@ namespace ProcessAndResourceManager
         /// <param name="name">The process name.</param>
         public void Destroy(char name)
         {
+            // Search for process starting at the init process
+            var p = FindProcessById(name.ToString(), ReadyList[0][0]);
+
+            if (p == null)
+            {
+                throw new Exception("process does not exist");
+            }
+
+            KillTree(p);
+
             Scheduler();
         }
 
@@ -111,8 +131,40 @@ namespace ProcessAndResourceManager
         /// </summary>
         /// <param name="resource">The resource.</param>
         /// <param name="units">The units.</param>
-        public void Request(int resource, int units)
+        public void Request(string resource, int units)
         {
+            // Get the resource
+            var r = Resources.First(x => x.Rid.ToLower() == resource.ToLower());
+
+            // Can't find resource, throw exception
+            if (r == null)
+            {
+                throw new Exception("could not located resource");
+            }
+
+            // Max units is less than requested units, throw exception
+            if (units > r.MaxUnits)
+            {
+                throw new Exception("requested units too large for resource");
+            }
+
+            // If there are enough available units, access resource
+            if (units <= r.CurUnits)
+            {
+                r.CurUnits -= units;
+                RunningProcess.OtherResources.Add(r);
+            }
+            // Otherwise, block process, add resource to status list, remove process from ready queue,
+            // and insert process to waitlist of resource
+            else
+            {
+                RunningProcess.StatusType = ProcessStates.Blocked;
+                RunningProcess.StatusList = r;
+                ReadyList[(int)RunningProcess.Priority].RemoveAt(0);
+                //r.WaitingList.Add(RunningProcess, units);
+                r.WaitingList.Add(new KeyValuePair<ProcessControlBlock, int>(RunningProcess, units));
+            }
+
             Scheduler();
         }
 
@@ -123,8 +175,38 @@ namespace ProcessAndResourceManager
         /// </summary>
         /// <param name="resource">The resource.</param>
         /// <param name="units">The units.</param>
-        public void Release(int resource, int units)
+        public void Release(string resource, int units)
         {
+            // Get the resource
+            var r = Resources.First(x => x.Rid.ToLower() == resource.ToLower());
+
+            // Can't find resource, throw exception
+            if (r == null)
+            {
+                throw new Exception("could not located resource");
+            }
+
+            // Release the resource from the current running process
+            RunningProcess.OtherResources.Remove(r);
+            r.CurUnits += units;
+
+            // loop through all waiting processes to get access to resource
+            while (r.WaitingList.Count != 0 && r.WaitingList[0].Value <= r.CurUnits)
+            {
+                // Get process from waiting list
+                var process = r.WaitingList[0].Key;
+
+                // Remove process from waiting list
+                r.WaitingList.RemoveAt(0);
+
+                process.StatusType = ProcessStates.Ready;
+                process.StatusList = ReadyList;
+                process.OtherResources.Add(r);
+
+                // Insert process into ready list
+                ReadyList[(int)process.Priority].Add(process);
+            }
+
             Scheduler();
         }
 
@@ -135,6 +217,18 @@ namespace ProcessAndResourceManager
         /// </summary>
         public void Timeout()
         {
+            for (var i = 2; i > 0; i--)
+            {
+                if (ReadyList[i].Count > 0)
+                {
+                    var process = ReadyList[i][0];
+                    ReadyList[i].RemoveAt(0);
+                    ReadyList[i].Add(process);
+
+                    break;
+                }
+            }
+
             Scheduler();
         }
 
@@ -154,18 +248,26 @@ namespace ProcessAndResourceManager
         /// <param name="id">The identifier.</param>
         /// <param name="process">The current process.</param>
         /// <returns></returns>
-        private ProcessControlBlock findProcessById(string id, ProcessControlBlock process)
+        private static ProcessControlBlock FindProcessById(string id, ProcessControlBlock process)
         {
             if ((process == null) || process.Pid == id) return process;
 
             // recursively navigate through tree to find process, otherwise return null
             foreach (var proc in process.Children)
             {
-                var p = findProcessById(id, proc);
+                var p = FindProcessById(id, proc);
                 if (p != null) return p;
             }
 
             return null;
+        }
+
+        private void KillTree(ProcessControlBlock process)
+        {
+            foreach (var proc in process.Children)
+            {
+                KillTree(proc);
+            }
         }
 
 

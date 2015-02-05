@@ -37,10 +37,10 @@ namespace ProcessAndResourceManager
                             manager.Destroy(Char.Parse(tokens[1]));
                             break;
                         case "req":
-                            manager.Request(Int32.Parse(tokens[1]), Int32.Parse(tokens[2]));
+                            manager.Request(tokens[1], Int32.Parse(tokens[2]));
                             break;
                         case "rel":
-                            manager.Release(Int32.Parse(tokens[1]), Int32.Parse(tokens[2]));
+                            manager.Release(tokens[1], Int32.Parse(tokens[2]));
                             break;
                         case "to":
                             manager.Timeout();

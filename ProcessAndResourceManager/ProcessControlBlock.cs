@@ -9,7 +9,7 @@ namespace ProcessAndResourceManager
     class ProcessControlBlock
     {
         public string Pid;
-        public List<ResourceControlBlock> OtherResources;
+        public List<KeyValuePair<ResourceControlBlock, int>> OtherResources;
         public ProcessStates StatusType;
         public object StatusList;
         public ProcessControlBlock Parent;
@@ -22,7 +22,7 @@ namespace ProcessAndResourceManager
             Priority = priority;
             StatusType = ProcessStates.Ready;
             Children = new List<ProcessControlBlock>();
-            OtherResources = new List<ResourceControlBlock>();
+            OtherResources = new List<KeyValuePair<ResourceControlBlock, int>>();
         }
     }
 }

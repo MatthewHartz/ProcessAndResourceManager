@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -60,7 +61,7 @@ namespace ProcessAndResourceManager
                 new ResourceControlBlock("R4", 4),
             };
 
-            Scheduler();
+            Scheduler(process);
         }
 
         /// <summary>
@@ -85,9 +86,8 @@ namespace ProcessAndResourceManager
             // Recursively search children tree of the init process to see if process id already exists
             if (FindProcessById(name.ToString(), ReadyList[0][0]) != null)
             {
-                throw new Exception("process name already exists");
+                throw new Exception(String.Format("duplicate process name: {0}", name));
             }
-
 
             // Create new Process
             var process = new ProcessControlBlock(name.ToString(), (Priorities)priority);
@@ -102,7 +102,7 @@ namespace ProcessAndResourceManager
             // Add process to ready list
             ReadyList[priority].Add(process);
 
-            Scheduler();
+            Scheduler(process);
         }
 
         /// <summary>
@@ -119,9 +119,14 @@ namespace ProcessAndResourceManager
                 throw new Exception("process does not exist");
             }
 
+            // Deletes children
             KillTree(p);
 
-            Scheduler();
+            // Removes process from parent
+            p.Parent.Children.Remove(p);
+            p.Parent = null;
+
+            Scheduler(null);
         }
 
 
@@ -134,25 +139,51 @@ namespace ProcessAndResourceManager
         public void Request(string resource, int units)
         {
             // Get the resource
-            var r = Resources.First(x => x.Rid.ToLower() == resource.ToLower());
+            ResourceControlBlock r;
 
-            // Can't find resource, throw exception
-            if (r == null)
+            try
             {
-                throw new Exception("could not located resource");
+                r = Resources.First(x => x.Rid.ToLower() == resource.ToLower());
+            }
+            catch (Exception e)
+            {
+                throw new Exception(String.Format("non-existent resource: {0}", resource));
             }
 
             // Max units is less than requested units, throw exception
             if (units > r.MaxUnits)
             {
-                throw new Exception("requested units too large for resource");
+                throw new Exception(String.Format("request too many units: {0}/{1}", units, resource));
             }
 
             // If there are enough available units, access resource
             if (units <= r.CurUnits)
             {
-                r.CurUnits -= units;
-                RunningProcess.OtherResources.Add(r);
+                // Test and see if process already allocates a part of this resource
+                var ResourceBeingUsed = new KeyValuePair<ResourceControlBlock, int>();
+
+                try
+                {
+                    ResourceBeingUsed = RunningProcess.OtherResources.First(x => x.Key.Rid == resource);
+                }
+                catch (Exception e)
+                {
+                }
+
+                if (ResourceBeingUsed.Key != null)
+                {
+                    var newPair = new KeyValuePair<ResourceControlBlock, int>(ResourceBeingUsed.Key, ResourceBeingUsed.Value + units);
+                    RunningProcess.OtherResources.Remove(
+                        RunningProcess.OtherResources.First(x => x.Key == ResourceBeingUsed.Key));
+                    RunningProcess.OtherResources.Add(newPair);
+                    r.CurUnits -= units;
+                }
+                else
+                {
+                    r.CurUnits -= units;
+                    RunningProcess.OtherResources.Add(new KeyValuePair<ResourceControlBlock, int>(r, units));
+                }
+
             }
             // Otherwise, block process, add resource to status list, remove process from ready queue,
             // and insert process to waitlist of resource
@@ -165,7 +196,7 @@ namespace ProcessAndResourceManager
                 r.WaitingList.Add(new KeyValuePair<ProcessControlBlock, int>(RunningProcess, units));
             }
 
-            Scheduler();
+            Scheduler(RunningProcess);
         }
 
 
@@ -186,28 +217,9 @@ namespace ProcessAndResourceManager
                 throw new Exception("could not located resource");
             }
 
-            // Release the resource from the current running process
-            RunningProcess.OtherResources.Remove(r);
-            r.CurUnits += units;
+            ReleaseResource(RunningProcess, r, units);
 
-            // loop through all waiting processes to get access to resource
-            while (r.WaitingList.Count != 0 && r.WaitingList[0].Value <= r.CurUnits)
-            {
-                // Get process from waiting list
-                var process = r.WaitingList[0].Key;
-
-                // Remove process from waiting list
-                r.WaitingList.RemoveAt(0);
-
-                process.StatusType = ProcessStates.Ready;
-                process.StatusList = ReadyList;
-                process.OtherResources.Add(r);
-
-                // Insert process into ready list
-                ReadyList[(int)process.Priority].Add(process);
-            }
-
-            Scheduler();
+            Scheduler(RunningProcess);
         }
 
 
@@ -217,19 +229,22 @@ namespace ProcessAndResourceManager
         /// </summary>
         public void Timeout()
         {
+            ProcessControlBlock process = null;
+
             for (var i = 2; i > 0; i--)
             {
                 if (ReadyList[i].Count > 0)
                 {
-                    var process = ReadyList[i][0];
-                    ReadyList[i].RemoveAt(0);
-                    ReadyList[i].Add(process);
-
+                    process = ReadyList[i][0];
                     break;
                 }
             }
 
-            Scheduler();
+            ReadyList[(int) process.Priority].Remove(process);
+            process.StatusType = ProcessStates.Ready;
+            ReadyList[(int) process.Priority].Add(process);
+
+            Scheduler(process);
         }
 
 
@@ -262,11 +277,96 @@ namespace ProcessAndResourceManager
             return null;
         }
 
+        /// <summary>
+        /// Releases resources from all children nodes and from process.
+        /// </summary>
+        /// <param name="process">The process.</param>
         private void KillTree(ProcessControlBlock process)
         {
+            if (process == null) return;
+
             foreach (var proc in process.Children)
             {
                 KillTree(proc);
+            }
+
+            // remove all children
+            process.Children = null;
+
+            // if process is blocked by resource, remove process from waiting list
+            if (process.StatusType == ProcessStates.Blocked)
+            {
+                var resource = (ResourceControlBlock) process.StatusList;
+                resource.WaitingList.Remove(resource.WaitingList.First(x => x.Key.Equals(process)));
+                process.StatusList = null;
+            }
+            // else remove process from ready list
+            else
+            {
+                ReadyList[(int) process.Priority].Remove(process);
+            }
+
+            // Release resources
+            foreach (var resourceRequest in process.OtherResources.ToList())
+            {
+                var units = resourceRequest.Value;
+                var resource = resourceRequest.Key;
+
+                ReleaseResource(process, resource, units);
+            }
+
+            // remove pointer to parent
+            //process.Parent = null;
+        }
+
+        private void ReleaseResource(ProcessControlBlock process, ResourceControlBlock resource, int units)
+        {
+            // Is the release attempting to release too many units
+            if (resource.CurUnits + units <= resource.MaxUnits)
+            {
+                // Reduce the allocated units from resource units pair
+                var resourceUnits = process.OtherResources.First(x => x.Key == resource);
+                var newPair = new KeyValuePair<ResourceControlBlock, int>(resourceUnits.Key, resourceUnits.Value - units);
+
+                // process is no longer using resource
+                if (newPair.Value == 0)
+                {
+                    process.OtherResources.Remove(process.OtherResources.First(x => x.Key.Equals(resource)));
+                }
+                else
+                {
+                    process.OtherResources.Remove(
+                        RunningProcess.OtherResources.First(x => x.Key == resourceUnits.Key));
+                    RunningProcess.OtherResources.Add(newPair);
+                }
+
+                
+                resource.CurUnits += units;
+            }
+            else
+            {
+                throw new Exception(String.Format("release too many units: {0}/{1}:{2}", units, resource.Rid, resource.MaxUnits - resource.CurUnits));
+            }
+
+            // loop through all waiting processes to get access to resource
+            while (resource.WaitingList.Count != 0 && resource.WaitingList[0].Value <= resource.CurUnits)
+            {
+                // Get process from waiting list
+                process = resource.WaitingList[0].Key;
+
+                // Get requested amount of resource
+                var u = resource.WaitingList.First(x => x.Key.Equals(process)).Value;
+
+                // Remove process from waiting list
+                resource.WaitingList.RemoveAt(0);
+
+                // Add resource to process list
+                process.StatusType = ProcessStates.Ready;
+                process.StatusList = ReadyList;
+                process.OtherResources.Add(new KeyValuePair<ResourceControlBlock, int>(resource, u));
+
+                // Insert process into ready list
+                ReadyList[(int)process.Priority].Add(process);
             }
         }
 
@@ -274,18 +374,32 @@ namespace ProcessAndResourceManager
         /// <summary>
         /// Helper function that adjusts the ready list based upon recent changes
         /// </summary>
-        private void Scheduler()
+        private void Scheduler(ProcessControlBlock process)
         {
+            ProcessControlBlock p = null;
+
             for (var i = 2; i >= 0; i--)
             {
                 if (ReadyList[i].Count > 0)
                 {
-                    RunningProcess = ReadyList[i][0];
-                    return;
+                    p = ReadyList[i][0];
+                    break;
                 }
             }
 
-            throw new Exception("No processes running: EXTREME FAILURE!");
+            if (p == null)
+            {
+                throw new Exception("No processes running: EXTREME FAILURE!");
+                
+            }
+
+            if (process == null ||
+                process.Priority < p.Priority ||
+                process.StatusType != ProcessStates.Running)
+            {
+                p.StatusType = ProcessStates.Running;
+                RunningProcess = p;
+            }
         }
     }
 }

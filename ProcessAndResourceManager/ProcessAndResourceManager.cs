@@ -319,34 +319,50 @@ namespace ProcessAndResourceManager
             //process.Parent = null;
         }
 
+        /// <summary>
+        /// Helper method used to release the resource. This function is the core of the "Release"
+        /// function, but is used because "Kill Tree" also recursively releases resources on delete.
+        /// </summary>
+        /// <param name="process">The process.</param>
+        /// <param name="resource">The resource.</param>
+        /// <param name="units">The units.</param>
+        /// <exception cref="Exception">
+        /// </exception>
         private void ReleaseResource(ProcessControlBlock process, ResourceControlBlock resource, int units)
         {
-            // Is the release attempting to release too many units
-            if (resource.CurUnits + units <= resource.MaxUnits)
+            // Validate that the process has units from the resource
+            if (!process.OtherResources.Where(x => x.Key == resource).Select(y => y).Any())
             {
-                // Reduce the allocated units from resource units pair
-                var resourceUnits = process.OtherResources.First(x => x.Key == resource);
-                var newPair = new KeyValuePair<ResourceControlBlock, int>(resourceUnits.Key, resourceUnits.Value - units);
-
-                // process is no longer using resource
-                if (newPair.Value == 0)
-                {
-                    process.OtherResources.Remove(process.OtherResources.First(x => x.Key.Equals(resource)));
-                }
-                else
-                {
-                    process.OtherResources.Remove(
-                        RunningProcess.OtherResources.First(x => x.Key == resourceUnits.Key));
-                    RunningProcess.OtherResources.Add(newPair);
-                }
-
-                
-                resource.CurUnits += units;
+                throw new Exception(String.Format("not holding resource: {0}", resource.Rid));
             }
-            else
+
+            // Is the release attempting to release too many units
+            if (resource.CurUnits + units > resource.MaxUnits)
             {
                 throw new Exception(String.Format("release too many units: {0}/{1}:{2}", units, resource.Rid, resource.MaxUnits - resource.CurUnits));
             }
+
+
+            // Reduce the allocated units from resource units pair
+            var resourceUnits = process.OtherResources.First(x => x.Key == resource);
+            var newPair = new KeyValuePair<ResourceControlBlock, int>(resourceUnits.Key,
+                resourceUnits.Value - units);
+
+            // process is no longer using resource
+            if (newPair.Value == 0)
+            {
+                process.OtherResources.Remove(process.OtherResources.First(x => x.Key.Equals(resource)));
+            }
+            else
+            {
+                process.OtherResources.Remove(
+                    RunningProcess.OtherResources.First(x => x.Key == resourceUnits.Key));
+                RunningProcess.OtherResources.Add(newPair);
+            }
+
+
+            resource.CurUnits += units;
+
 
             // loop through all waiting processes to get access to resource
             while (resource.WaitingList.Count != 0 && resource.WaitingList[0].Value <= resource.CurUnits)
@@ -356,6 +372,9 @@ namespace ProcessAndResourceManager
 
                 // Get requested amount of resource
                 var u = resource.WaitingList.First(x => x.Key.Equals(process)).Value;
+
+                // Remove units from resource
+                resource.CurUnits -= u;
 
                 // Remove process from waiting list
                 resource.WaitingList.RemoveAt(0);

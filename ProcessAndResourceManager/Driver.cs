@@ -28,7 +28,7 @@ namespace ProcessAndResourceManager
                     {
                         case "init":
                             manager.Initialize();
-                            sb.AppendLine();
+                            sb.AppendLine().AppendLine();
                             sb.Append(manager.GetRunningProcess());
                             break;
                         case "quit":

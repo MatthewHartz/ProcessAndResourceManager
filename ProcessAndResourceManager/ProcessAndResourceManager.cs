@@ -67,7 +67,10 @@ namespace ProcessAndResourceManager
         /// <summary>
         /// Terminates the execution of the system
         /// </summary>
-        public void Quit() { throw new NotImplementedException(); }
+        public void Quit()
+        {
+            Environment.Exit(0);
+        }
 
         /// <summary>
         /// Creates a new new process <name> at the priority level <priority>;
@@ -138,6 +141,12 @@ namespace ProcessAndResourceManager
         /// <param name="units">The units.</param>
         public void Request(string resource, int units)
         {
+            // Init process cannot allocate resources
+            if (RunningProcess.Pid == "init")
+            {
+                throw new Exception(String.Format("{0} cannot allocate resources", RunningProcess.Pid));
+            }
+
             // Get the resource
             ResourceControlBlock r;
 
@@ -160,21 +169,21 @@ namespace ProcessAndResourceManager
             if (units <= r.CurUnits)
             {
                 // Test and see if process already allocates a part of this resource
-                var ResourceBeingUsed = new KeyValuePair<ResourceControlBlock, int>();
+                var resourceBeingUsed = new KeyValuePair<ResourceControlBlock, int>();
 
                 try
                 {
-                    ResourceBeingUsed = RunningProcess.OtherResources.First(x => x.Key.Rid == resource);
+                    resourceBeingUsed = RunningProcess.OtherResources.First(x => x.Key.Rid == resource);
                 }
                 catch (Exception e)
                 {
                 }
 
-                if (ResourceBeingUsed.Key != null)
+                if (resourceBeingUsed.Key != null)
                 {
-                    var newPair = new KeyValuePair<ResourceControlBlock, int>(ResourceBeingUsed.Key, ResourceBeingUsed.Value + units);
+                    var newPair = new KeyValuePair<ResourceControlBlock, int>(resourceBeingUsed.Key, resourceBeingUsed.Value + units);
                     RunningProcess.OtherResources.Remove(
-                        RunningProcess.OtherResources.First(x => x.Key == ResourceBeingUsed.Key));
+                        RunningProcess.OtherResources.First(x => x.Key == resourceBeingUsed.Key));
                     RunningProcess.OtherResources.Add(newPair);
                     r.CurUnits -= units;
                 }
@@ -208,13 +217,21 @@ namespace ProcessAndResourceManager
         /// <param name="units">The units.</param>
         public void Release(string resource, int units)
         {
-            // Get the resource
-            var r = Resources.First(x => x.Rid.ToLower() == resource.ToLower());
-
-            // Can't find resource, throw exception
-            if (r == null)
+            // Init cannot release any resources
+            if (RunningProcess.Pid == "init")
             {
-                throw new Exception("could not located resource");
+                throw new Exception(String.Format("{0} cannot release resources", RunningProcess.Pid));
+            }
+
+            // Get the resource
+            ResourceControlBlock r;
+            try
+            {
+                r = Resources.First(x => x.Rid.ToLower() == resource.ToLower());
+            }
+            catch (Exception e)
+            {
+                throw new Exception(String.Format("could not locate resource {0}", resource));
             }
 
             ReleaseResource(RunningProcess, r, units);
@@ -231,7 +248,7 @@ namespace ProcessAndResourceManager
         {
             ProcessControlBlock process = null;
 
-            for (var i = 2; i > 0; i--)
+            for (var i = 2; i >= 0; i--)
             {
                 if (ReadyList[i].Count > 0)
                 {
@@ -314,9 +331,6 @@ namespace ProcessAndResourceManager
 
                 ReleaseResource(process, resource, units);
             }
-
-            // remove pointer to parent
-            //process.Parent = null;
         }
 
         /// <summary>
